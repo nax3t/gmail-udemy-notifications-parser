@@ -19,6 +19,8 @@ const fs = require('fs');
 const util = require('util');
 const readline = require('readline');
 const {google} = require('googleapis');
+const writeFile = util.promisify(fs.writeFile);
+const _ = require('lodash');
 
 // If modifying these scopes, delete token.json.
 const SCOPES = ['https://www.googleapis.com/auth/gmail.modify'];
@@ -117,43 +119,47 @@ async function listMessages(auth) {
       })
     })
   }
+
   try {
-    let q = `label:udemy-notifications is:unread`;
-    let res = await messagesList({
-      userId: 'me',
-      q
-    })
-    const { messages } = res.data;
-    if (messages.length) {
-      console.log(`There are: ${messages.length} messages`);
-      const urls = [];
-      // iterate over messages and get each one then extract question url and push to urls array
-      for await (const message of messages) {
-        let res = await getMessage({
-          userId: 'me',
-          id: message.id,
-          format: 'full'
-        })
-        const buff = Buffer.from(res.data.payload.body.data, 'base64');
-        // decode buffer as UTF-8
-        const str = buff.toString('utf-8');
-        const url = str.match(/https:\/\/e2\.udemymail\.com\/ls\/click.+?(?=")/i)[0];
-        urls.push(url);
-      };
-      let writeFile = util.promisify(fs.writeFile);
-      await writeFile("urls.js", JSON.stringify(urls));
-      console.log("File written successfully\n");
-      // console.log("The written has the following contents:");
-      // console.log(fs.readFileSync("urls.js", "utf8"));
-      let ids = messages.map(m => m.id)
-      await batchModify({
+    let repeat = true;
+    let urls = [];
+    while(repeat) {
+      let q = `label:udemy-notifications is:unread`;
+      let res = await messagesList({
         userId: 'me',
-        ids,
-        removeLabelIds: ['UNREAD']
-      })
-    } else {
-      console.log('No messages found.');
+        q
+      });
+      let { messages } = res.data;
+      if (messages && messages.length) {
+        // iterate over messages and get each one then extract question url and push to urls array
+        for (const message of messages) {
+          let res = await getMessage({
+            userId: 'me',
+            id: message.id,
+            format: 'full'
+          })
+          const buff = Buffer.from(res.data.payload.body.data, 'base64');
+          // decode buffer as UTF-8
+          const str = buff.toString('utf-8');
+          const url = str.match(/https:\/\/e2\.udemymail\.com\/ls\/click.+?(?=")/i)[0];
+          urls.push({url, threadId: message.threadId});
+        };
+        let ids = messages.map(m => m.id)
+        await batchModify({
+          userId: 'me',
+          ids,
+          removeLabelIds: ['UNREAD']
+        })
+      } else {
+        repeat = false;
+      }
     }
+    urls = _.uniqBy(urls, 'threadId');
+    urls = urls.map(url => url.url);
+    console.log(`The urls array has ${urls.length} urls`);
+
+    await writeFile("urls.js", JSON.stringify(urls));
+    console.log("File written successfully\n");
   } catch(err) {
     return console.log(err);
   }

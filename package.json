@@ -5,7 +5,8 @@
   "main": "index.js",
   "dependencies": {
     "googleapis": "^76.0.0",
-    "moment": "^2.29.1"
+    "moment": "^2.29.1",
+    "lodash": "latest"
   },
   "devDependencies": {},
   "scripts": {
